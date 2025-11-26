@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScoreShifter | AI Music Transcription Bridge</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
+
+    <style>
+        :root {
+            --primary: #2563eb;
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        h1, h2, h3 { color: #0f172a; margin-bottom: 0.5rem; }
+        
+        .container {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+        }
+
+        /* Card Styling */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Upload Section */
+        .upload-zone {
+            border: 2px dashed #cbd5e1;
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .upload-zone:hover { border-color: var(--primary); background: #eff6ff; }
+
+        /* Controls */
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        select, button, textarea {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            border: 1px solid #cbd5e1;
+            font-size: 1rem;
+        }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        button:hover { background: #1d4ed8; }
+
+        /* The Prompt Box */
+        .prompt-box {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.9rem;
+            white-space: pre-wrap;
+            position: relative;
+            margin-bottom: 1rem;
+        }
+
+        /* Music Editor Area */
+        .editor-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+        @media (max-width: 768px) { .editor-layout { grid-template-columns: 1fr; } }
+
+        #abc-editor {
+            width: 100%;
+            height: 400px;
+            font-family: monospace;
+            resize: vertical;
+        }
+
+        #paper {
+            background: white;
+            min-height: 200px;
+            overflow-x: auto;
+        }
+
+        #pdf-preview-canvas {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid var(--border);
+            margin-top: 1rem;
+            display: none;
+        }
+
+        .step-badge {
+            display: inline-block;
+            background: var(--primary);
+            color: white;
+            padding: 0.2rem 0.6rem;
+            border-radius: 99px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            margin-right: 0.5rem;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ScoreShifter <span style="font-size: 0.5em; color: #64748b; font-weight: normal;">PDF to Sheet Music Bridge</span></h1>
+    <p>A tool to simplify or arrange sheet music using Browser AI.</p>
+
+    <div class="container">
+        
+        <div class="card">
+            <h2><span class="step-badge">1</span>Upload Sheet Music</h2>
+            <p>Upload a PDF. The tool will extract the first page as an image for the AI.</p>
+            <input type="file" id="file-input" accept="application/pdf" style="display: none;">
+            <div class="upload-zone" id="drop-zone">
+                <p><strong>Click to Select PDF</strong> or Drag & Drop here</p>
+            </div>
+            <canvas id="pdf-preview-canvas"></canvas>
+            <div id="image-status" style="margin-top: 0.5rem; color: #64748b; font-size: 0.9rem;"></div>
+        </div>
+
+        <div class="card">
+            <h2><span class="step-badge">2</span>Generate AI Instructions</h2>
+            <div class="controls">
+                <label>Target Complexity:</label>
+                <select id="complexity-select">
+                    <option value="1">Level 1: Basic Lead Sheet (Melody + Chords)</option>
+                    <option value="2" selected>Level 2: Simplified (Easy Piano)</option>
+                    <option value="3">Level 3: Advanced (Expanded Score)</option>
+                </select>
+            </div>
+            
+            <p>Copy the prompt below. Paste it into <strong>Gemini Advanced</strong> or <strong>ChatGPT-4o</strong> along with the image from Step 1 (right click the image above and 'Copy Image').</p>
+            
+            <div class="prompt-box" id="prompt-display">Select a file to generate the prompt...</div>
+            <button onclick="copyPrompt()">Copy Prompt to Clipboard</button>
+        </div>
+
+        <div class="card">
+            <h2><span class="step-badge">3</span>Render & Play</h2>
+            <p>Paste the AI's response (the code block starting with <code>X:1</code>) here.</p>
+            
+            <div class="editor-layout">
+                <div>
+                    <textarea id="abc-editor" placeholder="Paste ABC code here..." spellcheck="false"></textarea>
+                </div>
+                <div>
+                    <div id="audio-player"></div>
+                    <div id="paper"></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // --- STATE ---
+        const state = {
+            pdfDoc: null,
+            complexity: '2'
+        };
+
+        // --- DOM ELEMENTS ---
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const canvas = document.getElementById('pdf-preview-canvas');
+        const ctx = canvas.getContext('2d');
+        const promptDisplay = document.getElementById('prompt-display');
+        const complexitySelect = document.getElementById('complexity-select');
+        const abcEditor = document.getElementById('abc-editor');
+
+        // --- PROMPT TEMPLATES ---
+        const prompts = {
+            '1': `[ROLE]
+You are an expert Music Engraver. Output ONLY valid ABC Notation.
+
+[TASK]
+Convert this sheet music image into a "Lead Sheet".
+1. Extract only the main MELODY line.
+2. Identify chord symbols (e.g., Cm7, G) and place them in double quotes before the note (e.g., "Cm7"G2).
+3. REMOVE all accompaniment, inner voices, and bass lines.
+4. Ensure the Rhythm is mathematically perfect for the Time Signature.
+
+[FORMAT]
+Start with X:1. Use strict bar checks | .
+Do not write conversational text. Only the code block.`,
+
+            '2': `[ROLE]
+You are an expert Music Arranger and Engraver. Output ONLY valid ABC Notation.
+
+[TASK]
+Rewrite this sheet music as a "Simplified Easy Piano" arrangement.
+1. Right Hand: Keep the melody clear. Remove complex grace notes or fast runs.
+2. Left Hand: Simplify the accompaniment to single bass notes or simple whole/half note chords.
+3. Rhythm: Quantize complex syncopation to the nearest 8th note.
+4. Key: If the key has >3 sharps/flats, transpose to C or G Major.
+
+[FORMAT]
+Start with X:1. Use strict bar checks | .
+Do not write conversational text. Only the code block.`,
+
+            '3': `[ROLE]
+You are a Virtuoso Composer. Output ONLY valid ABC Notation.
+
+[TASK]
+Rewrite this sheet music as an "Advanced/Expanded" score.
+1. Texture: Thicken the voicings. Add octaves to the melody for impact.
+2. Accompaniment: Convert block chords into flowing arpeggios.
+3. Dynamics: Add dramatic markings (!f!, !pp!, !crescendo!) based on phrasing.
+
+[FORMAT]
+Start with X:1. Use strict bar checks | .
+Do not write conversational text. Only the code block.`
+        };
+
+        // --- EVENT LISTENERS ---
+        dropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileSelect);
+        complexitySelect.addEventListener('change', (e) => {
+            state.complexity = e.target.value;
+            updatePrompt();
+        });
+        
+        // Live Rendering of ABC
+        abcEditor.addEventListener('input', renderAbc);
+
+        // Drag & Drop support
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.borderColor = '#2563eb'; });
+        dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); dropZone.style.borderColor = '#cbd5e1'; });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#cbd5e1';
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+
+        // --- FUNCTIONS ---
+
+        function handleFileSelect(e) {
+            if (e.target.files.length) handleFile(e.target.files[0]);
+        }
+
+        function handleFile(file) {
+            if (file.type !== 'application/pdf') {
+                alert('Please upload a PDF file.');
+                return;
+            }
+            
+            dropZone.innerHTML = `<p>Processing: <strong>${file.name}</strong></p>`;
+            const fileReader = new FileReader();
+            fileReader.onload = function() {
+                const typedarray = new Uint8Array(this.result);
+                loadPdf(typedarray);
+            };
+            fileReader.readAsArrayBuffer(file);
+        }
+
+        async function loadPdf(data) {
+            try {
+                state.pdfDoc = await pdfjsLib.getDocument(data).promise;
+                renderPage(1);
+            } catch (err) {
+                console.error(err);
+                alert('Error parsing PDF. See console.');
+            }
+        }
+
+        async function renderPage(num) {
+            const page = await state.pdfDoc.getPage(num);
+            const viewport = page.getViewport({ scale: 1.5 }); // 1.5 scale for good OCR resolution
+            
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            canvas.style.display = 'block';
+
+            const renderContext = {
+                canvasContext: ctx,
+                viewport: viewport
+            };
+            
+            await page.render(renderContext).promise;
+            document.getElementById('image-status').innerText = "Image generated. Right-click image to Copy, or use a Snipping Tool.";
+            updatePrompt();
+        }
+
+        function updatePrompt() {
+            const txt = prompts[state.complexity];
+            promptDisplay.innerText = txt;
+        }
+
+        function copyPrompt() {
+            const text = promptDisplay.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                alert("Prompt copied! Now:\n1. Copy the Image above.\n2. Paste both into Gemini/ChatGPT.");
+            });
+        }
+
+        function renderAbc() {
+            const abc = abcEditor.value;
+            // Render Sheet Music
+            ABCJS.renderAbc("paper", abc, {
+                responsive: "resize",
+                add_classes: true
+            });
+            
+            // Render Audio Player
+            if (ABCJS.synth.supportsAudio()) {
+                const synthControl = new ABCJS.synth.SynthController();
+                synthControl.load("#audio-player", null, {
+                    displayRestart: true,
+                    displayPlay: true,
+                    displayProgress: true,
+                    displayWarp: true
+                });
+
+                const createSynth = new ABCJS.synth.CreateSynth();
+                createSynth.init({ visualObj: ABCJS.renderAbc("paper", abc)[0] }).then(function () {
+                    synthControl.setTune(ABCJS.renderAbc("paper", abc)[0], false);
+                }).catch(function (error) {
+                    console.warn("Audio problem:", error);
+                });
+            }
+        }
+
+        // Initialize Prompt on Load
+        updatePrompt();
+        
+        // Sample ABC for demo
+        abcEditor.value = `X:1
+T:Demo: Scale in C
+M:4/4
+L:1/4
+K:C
+C D E F | G A B c | c B A G | F E D C |]`;
+        renderAbc();
+
+    </script>
+</body>
+</html>
